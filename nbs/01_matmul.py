@@ -177,3 +177,59 @@ def matmul(a, b):
     return c
 
 matmul(torch.rand((2, 4)), torch.rand((4, 2)))
+
+
+#%%[markdown]
+# ## Einstein notation (einsum)
+
+# - Repeating letters between input arrays means those values will be multiplied together
+# - Omitting a letter from the output means values along that axis will be summed
+
+#%%
+
+m1 = torch.rand((5, 784))
+m2 = torch.rand((784, 10))
+
+print(m1.shape, m2.shape)
+
+#%%
+# c[i, j] += a[i, k] * b[k, j]
+# c[i, j] = (a[i, :] * b[:, j]).sum()
+mr = torch.einsum('ik,kj->ikj', m1, m2)
+mr.shape
+
+#%%
+mr = torch.einsum('ik,kj->ij', m1, m2)
+mr.shape
+
+#%%
+# can also just use the implicit output
+mr = torch.einsum('ik,kj', m1, m2)
+mr.shape
+
+#%%
+def matmul(a, b): return torch.einsum('ik,kj->ij', a, b)
+torch.allclose(matmul(m1, m2), m1 @ m2)
+
+#%%
+%timeit -n 5 _=matmul(m1, m2)
+%timeit -n 5 _= m1 @ m2
+
+
+#%%[markdown]
+# ## CUDA
+# Equivalent setup for kernel, without actually using CUDA :(
+#%%
+def matmul(grid, a, b, c):
+    i, j = grid
+    if i < c.shape[0] and j < c.shape[1]:
+        tmp = 0
+        for k in range(a.shape[1]): tmp += a[i, k] * b[k, j]
+        c[i, j] = tmp
+
+ar, ac = 5, 784
+br, bc = 784, 10
+
+res = torch.zeros(ar, bc)
+matmul((0, 0), m1, m2, res)
+res
