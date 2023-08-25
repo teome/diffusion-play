@@ -14,7 +14,6 @@ import urllib.request
 if not path_gz.exists():
     urllib.request.urlretrieve(MNIST_URL, path_gz)
 
-
 # %%
 with gzip.open(path_gz, 'rb') as f:
     ((x_train, y_train), (x_valid, y_valid), _) = pickle.load(f, encoding='latin1')
@@ -133,3 +132,48 @@ list(chunks([rand() for _ in range(10)], 2))
 %timeit -n 10 list(chunks([rand() for _ in range(7840)], 10))
 #%%
 %timeit -n 10 torch.randn(784, 10)
+
+
+#%%[markdown]
+# ## Matrix multiplication and playing with broadcasting]
+
+#%%
+import torch
+#%%
+a = torch.rand((2, 4, 3, 3))
+b = torch.tensor([[0], [1]])
+print(torch.allclose(a * b[:, :, None, None], a * b.reshape(2, 1, 1, 1)))
+
+# this fails because it's trying to make 4 match 2
+# b[:, :, None].expand_as(a) 
+
+c = torch.tensor([0, 1, 2])
+print(c.expand_as(a).stride())
+a * c.expand_as(a)
+
+# alternatively, let torch do this for us or
+print(torch.allclose(a * c, a * c[None, None, None, :]))
+# also same as
+print(torch.allclose(a * c, a * c[None, None, None ]))
+
+# switch around columns and rows for mult
+print(c[None, :] * c[:, None])
+
+#%%[markdown]
+
+# Broadcasting checks from right to left if number of elements is equal
+# It's fine if equal,  or one of them is 1 in which case it broadcasts this.
+# e.g. normalise image:
+#  Image 256 x 256 x 3
+#  Scale             3
+#  Res   256 x 256 x 3
+
+#%%
+def matmul(a, b):
+    (ar, ac), (br, bc) = a.shape, b.shape
+    c = torch.zeros(ar, bc)
+    for i in range(ar):
+        c[i] = (a[i, :, None] * b).sum(dim=0)
+    return c
+
+matmul(torch.rand((2, 4)), torch.rand((4, 2)))
