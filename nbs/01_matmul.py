@@ -233,3 +233,28 @@ br, bc = 784, 10
 res = torch.zeros(ar, bc)
 matmul((0, 0), m1, m2, res)
 res
+
+
+#%%[markdown]
+# ## Playing with einsum again
+
+# Calculating the l2norm
+#%%
+X = torch.rand((1500, 2))
+x = X[0]
+# print((x - X).shape, x.shape)
+
+a = x - X
+torch.allclose(torch.einsum('ij,ij->i', a, a)**0.5, ((x-X)**2).sum(1)**0.5)
+
+#%%
+inp = torch.randn((50,5))
+outg = torch.randn((50, 1))
+#%%
+torch.einsum('ij,ik->jk', inp, outg).shape
+#%%
+(inp.T @ outg).shape
+#%%
+torch.allclose(torch.einsum('ij,ik->jk', inp, outg), (inp.T @ outg))
+import pdb; pdb.set_trace()
+torch.allclose(torch.einsum('ij,ik->jk', inp, outg), (inp.unsqueeze(-1) * outg.unsqueeze(1)).sum(0))
