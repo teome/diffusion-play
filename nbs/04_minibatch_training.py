@@ -22,6 +22,27 @@ path_gz = path_data/'mnist.pkl.gz'
 with gzip.open(path_gz, 'rb') as f: ((x_train, y_train), (x_valid, y_valid), _) = pickle.load(f, encoding='latin1')
 x_train, y_train, x_valid, y_valid = map(torch.tensor, [x_train, y_train, x_valid, y_valid])
 
+
+# %%
+# Dataset info
+n,m = x_train.shape
+c = (y_train.max() + 1).item()
+nh = 50
+
+# %%
+class Model(nn.Module):
+    def __init__(self, n_in, nh, n_out):
+        self.layers = [nn.Linear(n_in, nh), nn.ReLU(), nn.Linear(nh, n_out)]
+
+    def __call__(self, x):
+        for layer in self.layers: x = layer(x)
+        return x
+
+# %%
+model = Model(m, nh, c)
+preds = model(x_train)
+preds.shape
+
 #%%[markdown]
 # ## Experimenting with the basics for logsoftmax -- yet again
 
@@ -77,8 +98,40 @@ def cross_entropy(probs, targets):
 
 assert torch.allclose(cross_entropy(probs, y), F.cross_entropy(probs, y)), 'did not find equality with torch in cross_entropy implementation'
 
-# ## TODO implement the basic model and training loop to test
+#%%[markdown]
+# # Basic training loop
 
+# Can now just use the torch implementation of log_softmax and cross_entropy
+# - Get model preds
+# - compare against labels and calculate loss
+# - calculate gradient of loss with respece to model params
+# - update params
+
+#%%
+loss_func = F.cross_entropy
+#%%
+bs = 50
+xb = x_train[:bs]
+preds = model(xb)
+preds[0], preds.shape
+
+# %%
+yb = y_train[:bs]
+yb.shape
+
+# %%
+loss_func(preds, yb)
+
+# %%
+# About the same as this for random init model and c classes
+-np.log(1/c)
+
+# %%
+preds.argmax(1)
+
+
+#%%
+################################################
 #%%[markdown]
 # # Datasets, batching and sampling
 #%%
@@ -131,38 +184,21 @@ for o in range(5): print(next(it))
 for i, n in enumerate(ss):
     print( i)
     if i > 4: break
-
+  
 # %%
 from itertools import islice
 for n in islice(ss, 5): print(n)
+
+
+def chunks(xs, sz):
+    xsinputs, xslabels = xs
+    for i in range(0, len(xsinputs), sz): yield xsinputs[i:i+sz], xslabels[i:i+sz]
+    
 # %%
-def chunked(xs, sz, drop_last=False):
-    idx = 0
-    xslen = len(xs)
-    while True:
-        endidx = idx + sz
-        print(idx, endidx, sz, xslen)
-        if (endidx <= xslen and drop_last) or idx < xslen:
-            startidx = idx
-            idx += sz
-            yield xs[startidx:min(endidx, xslen)]
-        else: raise StopIteration
+chunks(train_ds[0:5], 2)
 
-#%%
-xs = train_ds[0:5]
-xb = chunked(xs, 2, False)
+# %%
+for k in chunks(train_ds[0:5], 1): print(k)
 
-#%%
-next(xb)
-#%%
-for b in chunked(train_ds[0:5], 2, False):
-    print(b)
-
-#%%
-# implementing BatchSampler to encapsulate this slicing/limiting
-class BatchSampler:
-    def __init__(self, sampler, ds, drop_last=False): 
-        self.sampler, ds, drop_last = sampler, ds, drop_last
-        self.idx = 0
-    def __iter__(self):
-        
+# %%
+len(train_ds[0:5])
