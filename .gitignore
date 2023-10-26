@@ -1,3 +1,6 @@
 .vscode/settings.json
 *.gz
 data/
+models/
+messing*.py*
+messing*.py*
