@@ -1,0 +1,17 @@
+services:
+  aidev:
+    image: dak00/aidev:pytorch2.1-cu12.1-miniai
+    command: jupyter notebook --port=8888 /workspace/nbs
+    ports:
+      - 8888:8888
+    user: dom
+    volumes:
+      - $HOME/.cache/huggingface:/home/dom/.cache/huggingface
+      - .:/workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
