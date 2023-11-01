@@ -95,7 +95,7 @@ n_steps = 1000
 lin_abar = linear_sched(betamax=0.01)
 alphabar = lin_abar.abar
 alpha = lin_abar.a
-sig = lin_abar.sig
+sigma = lin_abar.sig
 
 # %%
 def noisify(x0, ᾱ):
@@ -160,7 +160,7 @@ learn.fit(epochs)
 # %%
 mdl_path = Path('../models')
 # %%
-torch.save(learn.model, mdl_path/'fashion_ddpm_3_25.pkl')
+torch.save(learn.model, mdl_path/'fashion_ddpm3_25.pkl')
 # %%
 # model = torch.load(mdl_path/'fashion_ddpm_3_25.pkl')
 
@@ -195,3 +195,88 @@ s.min(), s.max()
 
 # %%
 show_images(s[:16], imsize=1.5)
+
+# %%
+@inplace
+def transformi2(b): b[xl] = [F.pad(TF.to_tensor(o), (2, 2, 2, 2)) * 2 - 1 for o in b[xl]]
+
+tds2 = dsd.with_transform(transformi2)
+dls2 = DataLoaders.from_dd(tds2, bs, num_workers=fc.defaults.cpus)
+
+cmodel = torch.load(mdl_path/'data_aug2.pkl')
+del(cmodel[8])
+del(cmodel[7])
+
+# %%
+from miniai.fid import ImageEval
+
+# %%
+ie = ImageEval(cmodel, dls2, cbs=[DeviceCB()])
+# %%
+ie.fid(s)
+# %%
+s.min(), s.max()
+# %%
+ie.fid(xb*2)
+
+
+# %%[markdown]
+# ## Skip sampling
+
+# %%
+@torch.no_grad()
+def sample_skip(model, sz):
+    ps = next(model.parameters())
+    x_t = torch.randn(sz).to(ps)
+    preds = []
+    for t in reversed(range(n_steps)):
+        t_batch = torch.full((x_t.shape[0],), t, device=ps.device, dtype=torch.long)
+        z = (torch.randn(x_t.shape) if t > 0 else torch.zeros(x_t.shape)).to(ps)
+        ᾱ_t1 = alphabar[t-1]  if t > 0 else torch.tensor(1)
+        b̄_t = 1-alphabar[t]
+        b̄_t1 = 1-ᾱ_t1
+        if t%3==0 or t<50: noise = model((x_t, t_batch))
+        x_0_hat = ((x_t - b̄_t.sqrt() * noise)/alphabar[t].sqrt())
+        x_t = x_0_hat * ᾱ_t1.sqrt()*(1-alpha[t])/b̄_t + x_t * alpha[t].sqrt()*b̄_t1/b̄_t + sigma[t]*z
+        preds.append(x_t.cpu().float())
+    return preds
+
+# %%
+%%time
+samples = sample_skip(model, (n_samples, 1, 32, 32))
+# %%
+s = (samples[-1]*2)#.clamp(-1,1)
+# %%
+show_images(s[:25], imsize=1.5)
+# %%
+ie.fid(s)
+
+# %%
+@torch.no_grad()
+def sample2(model, sz):
+    ps = next(model.parameters())
+    x_t = torch.randn(sz).to(ps)
+    sample_at = {t for t in range(n_steps) if (t+101)%((t+101)//100)==0}
+    preds = []
+    for t in reversed(range(n_steps)):
+        t_batch = torch.full((x_t.shape[0],), t, device=ps.device, dtype=torch.long)
+        z = (torch.randn(x_t.shape) if t > 0 else torch.zeros(x_t.shape)).to(ps)
+        ᾱ_t1 = alphabar[t-1]  if t > 0 else torch.tensor(1)
+        b̄_t = 1-alphabar[t]
+        b̄_t1 = 1-ᾱ_t1
+        if t in sample_at: noise = model((x_t, t_batch))
+        x_0_hat = ((x_t - b̄_t.sqrt() * noise)/alphabar[t].sqrt())
+        x_t = x_0_hat * ᾱ_t1.sqrt()*(1-alpha[t])/b̄_t + x_t * alpha[t].sqrt()*b̄_t1/b̄_t + sigma[t]*z
+        if t in sample_at: preds.append(x_t.float().cpu())
+    return preds
+# %%
+%%time
+samples = sample2(model, (n_samples, 1, 32, 32))
+# %%
+s = (samples[-1]*2)#.clamp(-1,1)
+# %%
+show_images(s[:25], imsize=1.5)
+# %%
+ie.fid(s)
+# %%
+
