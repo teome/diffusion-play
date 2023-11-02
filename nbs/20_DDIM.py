@@ -1,6 +1,9 @@
 #%% [markdown]
 # # Denoising Diffusion Implicit Models -- DDIM
 # %%
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+# %%
 import pickle,gzip,math,os,time,shutil,torch,random,logging
 import fastcore.all as fc,matplotlib as mpl,numpy as np,matplotlib.pyplot as plt
 from collections.abc import Mapping
@@ -85,8 +88,8 @@ s = preds[-1].clamp(-0.5,0.5)*2
 show_images(s[:25], imsize=1.5)
 
 # %%
-# cmodel = torch.load('models/data_aug2.pkl')
-cmodel = torch.load('/content/data_aug2.pkl', map_location=def_device)
+cmodel = torch.load('../models/data_aug2.pkl', map_location=def_device)
+# cmodel = torch.load('/content/data_aug2.pkl', map_location=def_device)
 del(cmodel[8])
 del(cmodel[7])
 
@@ -96,7 +99,8 @@ def transformi(b): b[xl] = [F.pad(TF.to_tensor(o), (2,2,2,2))*2-1 for o in b[xl]
 
 bs = 2048
 tds = dsd.with_transform(transformi)
-dls = DataLoaders.from_dd(tds, bs, num_workers=fc.defaults.cpus)
+# dls = DataLoaders.from_dd(tds, bs, num_workers=fc.defaults.cpus)
+dls = DataLoaders.from_dd(tds, bs, num_workers=2)
 
 dt = dls.train
 xb,yb = next(iter(dt))
@@ -109,7 +113,9 @@ ie.fid(s),ie.kid(s)
 # %%
 ie.fid(xb),ie.kid(xb)
 
+
 # %% [markdown]
+#############################
 # ## Diffusers DDIM Scheduler
 
 # %%
@@ -165,4 +171,63 @@ s = (preds[-1]*2).clamp(-1,1)
 print(ie.fid(s),ie.kid(s))
 show_images(s[:25], imsize=1.5)
 
+# %%[markdown]
+# ## Implementing DDIM
+# %%
+from types import SimpleNamespace
+# %%
+n_steps = 1000
+# %%
+def linear_sched(betamin=0.0001, betamax=0.02, n_steps=1000):
+    beta = torch.linspace(betamin, betamax, n_steps)
+    return SimpleNamespace(a=1.-beta, abar=(1.-beta).cumprod(dim=0), sig=beta.sqrt())
+# %%
+sc = linear_sched(betamax=0.01, n_steps=n_steps)
+abar = sc.abar
+# %%[markdown]
+# pull out the single step function from the DDIM scheduler
+# %%
+def ddim_step(x_t, t, noise, abar_t, abar_t1, bbar_t, bbar_t1, eta):
+    vari = ((bbar_t1 / bbar_t) * (1 - abar_t / abar_t1))
+    sig = vari.sqrt() * eta
+    x_0_hat = ((x_t - bbar_t.sqrt() * noise) / abar_t.sqrt())
+    x_t = abar_t1.sqrt() * x_0_hat + (bbar_t1 - sig**2).sqrt() * noise
+    if t > 0: x_t += sig * torch.randn(x_t.shape).to(x_t)
+    return x_t
+# %%
+@torch.no_grad()
+def sample(f, model, sz, n_steps, skips=1, eta=1.):
+    tsteps = list(reversed(range(0, n_steps, skips)))
+    x_t = torch.randn(sz).to(model.device)
+    preds = []
+    for i, t in enumerate(progress_bar(tsteps)):
+        abar_t1 = abar[tsteps[i+1]] if t > 0 else torch.tensor(1)
+        noise = model(x_t, t).sample
+        x_t = f(x_t, t, noise, abar[t], abar_t1, 1-abar[t], 1-abar_t1, eta)
+        preds.append(x_t.float().cpu())
+    return preds
+# %%
+%%time
+samples = sample(ddim_step, model, sz, n_steps, 10)
+# %%
+s = (samples[-1]*2)#.clamp(-1,1)
+show_images(s[:25], imsize=1.5)
+print(ie.fid(s),ie.kid(s))
+# %%[markdown]
 
+# ## Triangular noise
+# %%
+def noisify(x0, ᾱ):
+    device = x0.device
+    n = len(x0)
+    t = torch.randint(0, n_steps, (n,), dtype=torch.long)
+    t = np.random.triangular(0, 0.5, 1, (n,)) * n_steps
+    t = torch.tensor(t, dtype=torch.long)
+    ε = torch.randn(x0.shape, device=device)
+    ᾱ_t = ᾱ[t].reshape(-1, 1, 1, 1).to(device)
+    xt = ᾱ_t.sqrt() * x0 + (1 - ᾱ_t).sqrt() * ε
+    return (xt, t.to(device)), ε
+# %%
+(xt, t), ε = noisify(xb, abar)
+plt.hist(t);
+# %%
