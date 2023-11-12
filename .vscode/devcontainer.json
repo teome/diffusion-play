@@ -1,4 +1,8 @@
 {
+	"settings": {
+		"terminal.integrated.shell.linux": "/bin/bash",
+		"python.defaultInterpreterPath": "/opt/conda/bin/python",
+	},
 	"extensions": [
 		"GitHub.copilot",
 		"GitHub.copilot-chat",
