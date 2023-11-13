@@ -1,4 +1,6 @@
 .vscode/settings.json
+.ipynb_checkpoints/
+.virtual_documents/
 *.gz
 data/
 models/
